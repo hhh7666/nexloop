@@ -1,0 +1,15 @@
+{
+  "name": "nexloop-v0",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NexLoop V0 — model-agnostic interaction layer: Split → Schedule → Interrupt → Replan. Zero runtime dependencies.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/nexloop.test.js test/parse.test.js"
+  },
+  "engines": {
+    "node": ">=18.13"
+  },
+  "license": "MIT"
+}
