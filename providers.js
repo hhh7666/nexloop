@@ -155,16 +155,18 @@ function createOpenAIProvider({
 }
 
 /**
- * Deterministic mock provider.
+ * Zero-config demo fixture (no API key).
+ *
+ * Returns a deterministic, realistic 3-unit plan so the four-move loop
+ * (split → schedule → interrupt → replan) can be experienced with zero setup.
  *
  * If the user message starts with "@@MOCK@@ ", the rest is treated as raw model
  * output and run through the SAME parsePlanUnits() pipeline as a real model —
- * so tests can script valid plans, invalid JSON, or anything in between.
- * Otherwise it returns a fixed 3-unit plan echoing the message.
+ * this is how the test suite scripts valid plans, invalid JSON, etc.
  */
-function createMockProvider() {
+function createDemoProvider() {
   return {
-    name: 'mock',
+    name: 'demo',
     async generatePlan(history) {
       // Optional artificial latency so tests can force overlapping LLM calls.
       const llmMs = Number(process.env.NEXLOOP_MOCK_LLM_MS || 0);
@@ -176,12 +178,12 @@ function createMockProvider() {
         return parsePlanUnits(m[1]); // throws on invalid output → engine fallback
       }
       return [
-        { text: `m1: 收到 “${text}”`, delay_ms: 0 },
-        { text: 'm2: 继续……', delay_ms: 3000 },
-        { text: 'm3: 说完了。', delay_ms: 3000 },
+        { text: `1/3 · 收到：“${text}”。先做第一步——`, delay_ms: 0 },
+        { text: '2/3 · 接着做第二步，保持节奏。', delay_ms: 2500 },
+        { text: '3/3 · 最后收尾。你可以随时插话打断我。', delay_ms: 2500 },
       ];
     },
   };
 }
 
-module.exports = { createOpenAIProvider, createMockProvider, parsePlanUnits, extractJson, SYSTEM_PROMPT };
+module.exports = { createOpenAIProvider, createDemoProvider, parsePlanUnits, extractJson, SYSTEM_PROMPT };

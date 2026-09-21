@@ -18,7 +18,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { NexLoopEngine } = require('./engine');
-const { createOpenAIProvider, createMockProvider } = require('./providers');
+const { createOpenAIProvider, createDemoProvider } = require('./providers');
 
 /* ---------------- tiny .env loader (real env vars win) ---------------- */
 function loadDotEnv() {
@@ -45,23 +45,34 @@ function loadDotEnv() {
 }
 
 /* ---------------- config ---------------- */
+loadDotEnv(); // load .env first (real env vars still win)
+
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = process.env.PORT !== undefined && process.env.PORT !== '' ? Number(process.env.PORT) : 3000;
-const MODE = (process.env.NEXLOOP_MODE || 'mock').toLowerCase();
+
+// Default (auto): a real model whenever an API key is configured; otherwise a
+// zero-config deterministic demo fixture so the app runs with no setup.
+// A configured real model always wins — it is never silently replaced by a demo.
+const hasKey = Boolean(process.env.NEXLOOP_API_KEY || process.env.OPENAI_API_KEY);
+const MODE = (process.env.NEXLOOP_MODE || (hasKey ? 'openai' : 'demo')).toLowerCase();
 
 function buildProvider() {
-  if (MODE === 'openai') {
+  if (MODE === 'demo') return createDemoProvider();
+  if (MODE === 'openai' || MODE === 'auto') {
+    if (!hasKey) {
+      throw new Error(
+        'NEXLOOP_API_KEY is required for openai mode. ' +
+        'Configure it in .env, or leave NEXLOOP_MODE unset to run the zero-config demo.'
+      );
+    }
     return createOpenAIProvider({
-      apiKey:
-        process.env.NEXLOOP_API_KEY ||
-        process.env.OPENAI_API_KEY,
+      apiKey: process.env.NEXLOOP_API_KEY || process.env.OPENAI_API_KEY,
       baseUrl: process.env.NEXLOOP_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
       model: process.env.NEXLOOP_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini',
       jsonMode: process.env.NEXLOOP_JSON_MODE !== 'false',
     });
   }
-  if (MODE === 'mock') return createMockProvider();
-  throw new Error(`unknown NEXLOOP_MODE '${MODE}' (use 'mock' or 'openai')`);
+  throw new Error(`unknown NEXLOOP_MODE '${MODE}' (use 'openai' or 'demo')`);
 }
 
 const engine = new NexLoopEngine({ provider: buildProvider() });
@@ -143,6 +154,10 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, HOST, () => {
   const addr = server.address();
   console.log(`NEXLOOP_LISTENING http://${HOST}:${addr.port}`);
-  console.log(`NEXLOOP_MODE ${MODE}`);
-  console.log(`NEXLOOP_PROVIDER ${engine.provider.name}`);
+  console.log(`NEXLOOP_MODE ${MODE} (provider=${engine.provider.name})`);
+  if (MODE === 'openai') {
+    console.log(`NEXLOOP_MODEL ${process.env.NEXLOOP_MODEL || process.env.OPENAI_MODEL || '(default)'}`);
+  } else {
+    console.log('NEXLOOP_DEMO zero-config fixture — set NEXLOOP_API_KEY to use a real model');
+  }
 });
