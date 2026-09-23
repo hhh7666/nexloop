@@ -23,6 +23,12 @@
   }
   #status.busy { color: #ffd479; border-color: #66501f; background: #2a2415; }
   #status.err  { color: #ff8f8f; border-color: #663333; background: #2a1818; }
+  #timing { display: flex; gap: 4px; }
+  #timing button {
+    background: #242a33; color: #8b93a1; border: 1px solid #2c313a;
+    border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+  }
+  #timing button.active { color: #ffd479; border-color: #66501f; background: #2a2415; }
   main { flex: 1; display: flex; min-height: 0; }
   section { overflow-y: auto; padding: 14px 16px; }
   #transcript { flex: 1.4; border-right: 1px solid #2c313a; }
@@ -33,12 +39,15 @@
   .msg.user { justify-content: flex-end; }
   .msg.user .bubble { background: #24456b; color: #e8f0fa; }
   .msg.assistant .bubble { background: #232933; color: #dfe3e9; border: 1px solid #2e3540; }
+  .msg.assistant.typing .bubble { color: #8b93a1; font-style: italic; border-style: dashed; }
   .msg .tag { font-size: 10px; color: #5f6775; margin-top: 3px; }
   .msg.user .tag { text-align: right; }
   .ev { padding: 2px 0; color: #9aa2af; }
   .ev .t { color: #5f6775; }
   .ev.PLAN_CREATED     { color: #7fd1ff; }
+  .ev.UNIT_SCHEDULED   { color: #7fd1ff; }
   .ev.MESSAGE_SENT     { color: #b7e1a1; }
+  .ev.UNIT_HELD        { color: #ffd479; }
   .ev.PLAN_COMPLETED   { color: #7fe0c3; }
   .ev.USER_INTERRUPT   { color: #ffb86b; }
   .ev.PLAN_CANCELLED   { color: #ff7f7f; }
@@ -67,6 +76,11 @@
 <header>
   <h1>NexLoop V0</h1>
   <span class="meta">split → schedule → interrupt → replan</span>
+  <div id="timing">
+    <button data-preset="companion" title="真人节奏：不秒回、断断续续、沉默后补一句">陪伴</button>
+    <button data-preset="demo" title="30 秒演示：压缩区间，快速展示同样机制">演示</button>
+    <button data-preset="instant" title="关闭慢节奏：立即回复（普通聊天）">即时</button>
+  </div>
   <span id="status">idle</span>
 </header>
 <main>
@@ -126,10 +140,47 @@
     let meta = ev.plan_id ? ' plan=' + ev.plan_id : '';
     if (ev.reason) meta += ' reason=' + ev.reason;
     if (ev.generation !== undefined) meta += ' gen=' + ev.generation;
+    if (ev.delay_ms !== undefined) meta += ' delay=' + ev.delay_ms + 'ms';
+    if (ev.hold) meta += ' HOLD=' + ev.hold_ms + 'ms';
     row.innerHTML = '<span class="t">' + ts + '</span> ' + ev.event + meta;
     logEl.appendChild(row);
     while (logEl.children.length > MAX_EVENTS) logEl.removeChild(logEl.firstChild);
     logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  /* ---- pacing preset switch ---- */
+  const timingBtns = Array.prototype.slice.call(document.querySelectorAll('#timing button'));
+  function setTimingBtn(preset) {
+    timingBtns.forEach(function (b) { b.classList.toggle('active', b.dataset.preset === preset); });
+  }
+  timingBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      fetch('/api/timing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preset: b.dataset.preset }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { setTimingBtn(d.preset); })
+        .catch(function () { /* keep current */ });
+    });
+  });
+
+  /* ---- "typing" indicator in the transcript ---- */
+  let typingEl = null;
+  function showTyping(text) {
+    if (emptyHint) emptyHint.remove();
+    if (!typingEl) {
+      typingEl = document.createElement('div');
+      typingEl.className = 'msg assistant typing';
+      typingEl.appendChild(document.createElement('div')).className = 'bubble';
+      chatEl.appendChild(typingEl);
+    }
+    typingEl.querySelector('.bubble').textContent = text;
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+  function clearTyping() {
+    if (typingEl) { typingEl.remove(); typingEl = null; }
   }
 
   const es = new EventSource('/api/stream');
@@ -144,20 +195,27 @@
   es.addEventListener('PLAN_CREATED', function (e) {
     const d = JSON.parse(e.data);
     planCounts[d.plan_id] = { total: d.unit_count, sent: 0 };
-    setStatus('sending plan ' + d.plan_id + ' (0/' + d.unit_count + ')', 'busy');
+    setStatus('AI 正在酝酿回复… (0/' + d.unit_count + ')', 'busy');
+    showTyping('正在输入…');
   });
 
-  es.addEventListener('PLAN_COMPLETED', function (e) { setStatus('idle'); });
-  es.addEventListener('PLAN_CANCELLED', function (e) { setStatus('idle'); });
-  es.addEventListener('MODEL_ERROR', function () { setStatus('model error', 'err'); });
+  es.addEventListener('UNIT_HELD', function (e) {
+    const d = JSON.parse(e.data);
+    setStatus('AI 已读 · 若你沉默 ' + Math.round(d.hold_ms / 1000) + 's 会补一句', 'busy');
+    showTyping('已读 · 想一想再补一句…');
+  });
+
+  es.addEventListener('PLAN_COMPLETED', function () { setStatus('idle'); clearTyping(); });
+  es.addEventListener('PLAN_CANCELLED', function () { setStatus('idle'); clearTyping(); });
+  es.addEventListener('MODEL_ERROR', function () { setStatus('model error', 'err'); clearTyping(); });
 
   // User messages are appended optimistically on send (see send()); the
   // server's USER_MESSAGE echo is used only for the event log, not the
   // transcript, to avoid double rendering.
   es.addEventListener('USER_MESSAGE', function (e) { /* echo only */ });
-  es.addEventListener('USER_INTERRUPT', function (e) { const d = JSON.parse(e.data); setStatus('interrupted plan ' + d.plan_id + ' — replanning', 'busy'); });
+  es.addEventListener('USER_INTERRUPT', function (e) { const d = JSON.parse(e.data); setStatus('interrupted plan ' + d.plan_id + ' — replanning', 'busy'); clearTyping(); });
 
-  ['PLAN_CREATED','MESSAGE_SENT','PLAN_COMPLETED','USER_INTERRUPT','PLAN_CANCELLED','REPLAN_STARTED','MODEL_ERROR','USER_MESSAGE']
+  ['PLAN_CREATED','UNIT_SCHEDULED','MESSAGE_SENT','UNIT_HELD','PLAN_COMPLETED','USER_INTERRUPT','PLAN_CANCELLED','REPLAN_STARTED','MODEL_ERROR','USER_MESSAGE']
     .forEach(function (name) {
       es.addEventListener(name, function (e) { appendEv(JSON.parse(e.data)); });
     });
@@ -189,8 +247,10 @@
       for (const m of h.committedHistory) {
         appendMsg(m.role, m.content);
       }
+      if (h.timing) setTimingBtn(h.timing);
       if (h.activePlan) {
         setStatus('plan ' + h.activePlan.id + ' in flight (' + h.activePlan.delivered + '/' + h.activePlan.unitCount + ')', 'busy');
+        showTyping('正在输入…');
       }
     })
     .catch(function () { /* ignore */ });

@@ -12,7 +12,7 @@ function startServer(extraEnv = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['server.js'], {
       cwd: ROOT,
-      env: { ...process.env, NEXLOOP_MODE: 'demo', PORT: '0', ...extraEnv },
+      env: { ...process.env, NEXLOOP_MODE: 'demo', NEXLOOP_TIMING_PRESET: 'scripted', PORT: '0', ...extraEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let buf = '';

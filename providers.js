@@ -12,17 +12,17 @@
 const { MAX_UNITS, MAX_DELAY_MS } = require('./engine');
 
 const SYSTEM_PROMPT = [
-  'You are NexLoop, an interaction layer that delivers a reply as a timed sequence of short messages.',
+  'You are NexLoop, an interaction layer that delivers a reply as a sequence of short messages.',
   'Given the conversation history, produce the next delivery plan as JSON ONLY.',
   'Rules:',
-  '- Each message unit is short, self-contained, and adds NEW content (never repeat earlier units).',
-  '- Order matters: units are delivered in the given order.',
-  '- delay_ms = milliseconds to wait BEFORE this unit is sent. Use 0 for the first unit.',
-  '- Use delays for natural pacing (usually 1500-5000ms between units).',
-  '- The user may interrupt at any time, so later units may never be seen; put the most important content early.',
-  '- 2-5 units is typical. Use exactly as many as the content needs.',
+  '- Split your reply into 2-5 short, self-contained messages that build on each other.',
+  '- Each message adds NEW content (never repeat earlier ones).',
+  '- Order matters: messages are delivered in the given order.',
+  '- The user may interrupt at any time, so put the most important content early.',
+  '- The last message can be a light, open-ended line that keeps the conversation going.',
+  '- DO NOT include delay_ms — NexLoop decides the timing.',
   'Reply with ONLY valid JSON, no markdown fences, no commentary:',
-  '{"messages":[{"text":"...","delay_ms":0},{"text":"...","delay_ms":2500}]}',
+  '{"messages":[{"text":"..."},{"text":"..."}]}',
 ].join('\n');
 
 /** Extract JSON from raw model output (handles markdown fences / stray text). */
@@ -157,8 +157,9 @@ function createOpenAIProvider({
 /**
  * Zero-config demo fixture (no API key).
  *
- * Returns a deterministic, realistic 3-unit plan so the four-move loop
- * (split → schedule → interrupt → replan) can be experienced with zero setup.
+ * Returns a realistic variable-length plan (3–6 units, drawn at plan time) so
+ * the interaction loop (split → schedule → interrupt → replan, human pacing)
+ * can be experienced with zero setup — and no two sessions feel scripted.
  *
  * If the user message starts with "@@MOCK@@ ", the rest is treated as raw model
  * output and run through the SAME parsePlanUnits() pipeline as a real model —
@@ -177,11 +178,18 @@ function createDemoProvider() {
       if (m) {
         return parsePlanUnits(m[1]); // throws on invalid output → engine fallback
       }
-      return [
-        { text: `1/3 · 收到：“${text}”。先做第一步——`, delay_ms: 0 },
-        { text: '2/3 · 接着做第二步，保持节奏。', delay_ms: 2500 },
-        { text: '3/3 · 最后收尾。你可以随时插话打断我。', delay_ms: 2500 },
-      ];
+      const count = 3 + Math.floor(Math.random() * 4); // 3–6 units
+      const units = [];
+      for (let i = 0; i < count; i++) {
+        const unitText =
+          i === 0
+            ? `1/${count} · 收到：“${text}”。先说说我的想法——`
+            : i === count - 1
+              ? `${count}/${count} · 其实还有一点想补：我想听听你的看法。`
+              : `${i + 1}/${count} · 接着往下说，第 ${i + 1} 点。`;
+        units.push({ text: unitText, delay_ms: 0 });
+      }
+      return units;
     },
   };
 }

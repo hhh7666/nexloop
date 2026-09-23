@@ -4,12 +4,15 @@
  * NexLoop V0 — HTTP server.
  *
  *   GET  /             minimal interactive test bench (public/index.html)
- *   GET  /api/stream   Server-Sent Events: PLAN_CREATED / MESSAGE_SENT /
- *                      PLAN_COMPLETED / USER_INTERRUPT / PLAN_CANCELLED /
- *                      REPLAN_STARTED / USER_MESSAGE / MODEL_ERROR
+ *   GET  /api/stream   Server-Sent Events: PLAN_CREATED / UNIT_SCHEDULED /
+ *                      MESSAGE_SENT / UNIT_HELD / PLAN_COMPLETED /
+ *                      USER_INTERRUPT / PLAN_CANCELLED / REPLAN_STARTED /
+ *                      USER_MESSAGE / MODEL_ERROR
  *   POST /api/chat     {message} → cancel active plan (if any), commit the user
  *                      message, generate + start a new plan
  *   GET  /api/history  committed history + active plan snapshot
+ *   GET  /api/timing   current pacing preset (companion|demo|instant|scripted)
+ *   POST /api/timing   {preset} → switch pacing at runtime
  *
  * Zero runtime dependencies. Start with `node server.js`.
  */
@@ -19,6 +22,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { NexLoopEngine } = require('./engine');
 const { createOpenAIProvider, createDemoProvider } = require('./providers');
+const { TimingStrategy } = require('./timing');
 
 /* ---------------- tiny .env loader (real env vars win) ---------------- */
 function loadDotEnv() {
@@ -75,7 +79,27 @@ function buildProvider() {
   throw new Error(`unknown NEXLOOP_MODE '${MODE}' (use 'openai' or 'demo')`);
 }
 
-const engine = new NexLoopEngine({ provider: buildProvider() });
+/** Parse a "lo,hi" ms range env var → [lo,hi] or null. */
+function parseRange(v) {
+  if (!v) return null;
+  const p = String(v).split(',').map(Number);
+  if (p.length !== 2 || p.some((x) => !Number.isFinite(x) || x < 0)) return null;
+  return [p[0], p[1]];
+}
+
+// Pacing strategy. Default: companion (the product). Demo: compressed ranges
+// for a 30s phone demo. Instant: the OFF switch (classic immediate chat).
+const TIMING_PRESET = process.env.NEXLOOP_TIMING_PRESET || 'companion';
+const timingOverrides = {
+  first: parseRange(process.env.NEXLOOP_TIMING_FIRST_MS),
+  middle: parseRange(process.env.NEXLOOP_TIMING_MIDDLE_MS),
+  hold: parseRange(process.env.NEXLOOP_TIMING_HOLD_MS),
+};
+
+const engine = new NexLoopEngine({
+  provider: buildProvider(),
+  timing: new TimingStrategy(TIMING_PRESET, { overrides: timingOverrides }),
+});
 const sseClients = new Set();
 
 engine.on('event', (ev) => {
@@ -147,6 +171,29 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/timing') {
+    sendJson(res, 200, { preset: engine.timing.name });
+    return;
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/timing') {
+    let body = '';
+    req.on('data', (c) => {
+      body += c;
+      if (body.length > 4096) req.destroy();
+    });
+    req.on('end', () => {
+      try {
+        const parsed = JSON.parse(body || '{}');
+        const name = engine.setTimingPreset(String(parsed.preset || '').toLowerCase());
+        sendJson(res, 200, { preset: name });
+      } catch (err) {
+        sendJson(res, 400, { error: String((err && err.message) || err) });
+      }
+    });
+    return;
+  }
+
   res.writeHead(404, { 'Content-Type': 'text/plain' });
   res.end('not found');
 });
@@ -155,6 +202,7 @@ server.listen(PORT, HOST, () => {
   const addr = server.address();
   console.log(`NEXLOOP_LISTENING http://${HOST}:${addr.port}`);
   console.log(`NEXLOOP_MODE ${MODE} (provider=${engine.provider.name})`);
+  console.log(`NEXLOOP_TIMING ${engine.timing.name}`);
   if (MODE === 'openai') {
     console.log(`NEXLOOP_MODEL ${process.env.NEXLOOP_MODEL || process.env.OPENAI_MODEL || '(default)'}`);
   } else {

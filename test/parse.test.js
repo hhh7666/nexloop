@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parsePlanUnits } = require('../providers');
+const { parsePlanUnits, createDemoProvider } = require('../providers');
 
 test('parses a valid plan and normalizes fields', () => {
   const units = parsePlanUnits(
@@ -39,4 +39,13 @@ test('throws on missing text, empty messages, invalid delay, non-JSON', () => {
   assert.throws(() => parsePlanUnits(JSON.stringify({ messages: [{ text: 'x', delay_ms: 'abc' }] })), /delay/);
   assert.throws(() => parsePlanUnits('not json at all'), /JSON/);
   assert.throws(() => parsePlanUnits(''), /empty/);
+});
+
+test('demo provider default output is a valid variable-length plan (3-6 units)', async () => {
+  const p = createDemoProvider();
+  const units = await p.generatePlan([{ role: 'user', content: 'hi' }]);
+  assert.ok(Array.isArray(units), 'must return an array');
+  assert.ok(units.length >= 3 && units.length <= 6, `3-6 units, got ${units.length}`);
+  assert.ok(units.every((u) => typeof u.text === 'string' && u.text.trim() !== ''), 'every unit has text');
+  assert.ok(units.every((u) => Number.isFinite(u.delay_ms) && u.delay_ms >= 0), 'every unit has a valid delay_ms');
 });
