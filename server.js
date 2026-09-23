@@ -4,15 +4,19 @@
  * NexLoop V0 — HTTP server.
  *
  *   GET  /             minimal interactive test bench (public/index.html)
+ *   GET  /manifest.webmanifest, /icons/*   PWA assets (phone home-screen app)
  *   GET  /api/stream   Server-Sent Events: PLAN_CREATED / UNIT_SCHEDULED /
  *                      MESSAGE_SENT / UNIT_HELD / PLAN_COMPLETED /
  *                      USER_INTERRUPT / PLAN_CANCELLED / REPLAN_STARTED /
- *                      USER_MESSAGE / MODEL_ERROR
+ *                      USER_MESSAGE / MODEL_ERROR / MEMORY_LOADED
  *   POST /api/chat     {message} → cancel active plan (if any), commit the user
  *                      message, generate + start a new plan
- *   GET  /api/history  committed history + active plan snapshot
+ *   GET  /api/history  committed history + active plan snapshot + memory
  *   GET  /api/timing   current pacing preset (companion|demo|instant|scripted)
  *   POST /api/timing   {preset} → switch pacing at runtime
+ *
+ * Memory: conversation + profile persist to ./memory (NEXLOOP_MEMORY_DIR),
+ * restored on boot, auto-saved debounced on every mutation, flushed on exit.
  *
  * Zero runtime dependencies. Start with `node server.js`.
  */
@@ -23,6 +27,7 @@ const path = require('node:path');
 const { NexLoopEngine } = require('./engine');
 const { createOpenAIProvider, createDemoProvider } = require('./providers');
 const { TimingStrategy } = require('./timing');
+const { MemoryStore } = require('./memory');
 
 /* ---------------- tiny .env loader (real env vars win) ---------------- */
 function loadDotEnv() {
@@ -96,9 +101,15 @@ const timingOverrides = {
   hold: parseRange(process.env.NEXLOOP_TIMING_HOLD_MS),
 };
 
+// Memory layer: conversation + profile persisted to a folder, restored on boot,
+// auto-saved on every mutation and flushed on clean exit.
+const MEMORY_DIR = process.env.NEXLOOP_MEMORY_DIR || 'memory';
+const memory = new MemoryStore({ dir: MEMORY_DIR });
+
 const engine = new NexLoopEngine({
   provider: buildProvider(),
   timing: new TimingStrategy(TIMING_PRESET, { overrides: timingOverrides }),
+  memory,
 });
 const sseClients = new Set();
 
@@ -118,8 +129,37 @@ function sendJson(res, code, obj) {
   res.end(body);
 }
 
+/** Serve a static file from public/ (safe: no traversal). */
+function serveStatic(res, file, contentType) {
+  fs.readFile(file, (err, data) => {
+    if (err) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('not found');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': contentType });
+    res.end(data);
+  });
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+
+  if (req.method === 'GET' && url.pathname === '/manifest.webmanifest') {
+    serveStatic(res, path.join(__dirname, 'public', 'manifest.webmanifest'), 'application/manifest+json');
+    return;
+  }
+
+  if (req.method === 'GET' && url.pathname.startsWith('/icons/')) {
+    const name = path.basename(url.pathname); // basename only → no path traversal
+    if (!/\.png$/.test(name)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('not found');
+      return;
+    }
+    serveStatic(res, path.join(__dirname, 'public', 'icons', name), 'image/png');
+    return;
+  }
 
   if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
     const file = path.join(__dirname, 'public', 'index.html');
@@ -167,7 +207,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === 'GET' && url.pathname === '/api/history') {
-    sendJson(res, 200, engine.snapshot());
+    sendJson(res, 200, { ...engine.snapshot(), memory: engine.memorySnapshot() });
     return;
   }
 
@@ -203,9 +243,20 @@ server.listen(PORT, HOST, () => {
   console.log(`NEXLOOP_LISTENING http://${HOST}:${addr.port}`);
   console.log(`NEXLOOP_MODE ${MODE} (provider=${engine.provider.name})`);
   console.log(`NEXLOOP_TIMING ${engine.timing.name}`);
+  console.log(`NEXLOOP_MEMORY ${memory.path} (${engine.committedHistory.length} messages restored)`);
   if (MODE === 'openai') {
     console.log(`NEXLOOP_MODEL ${process.env.NEXLOOP_MODEL || process.env.OPENAI_MODEL || '(default)'}`);
   } else {
     console.log('NEXLOOP_DEMO zero-config fixture — set NEXLOOP_API_KEY to use a real model');
   }
 });
+
+// Clean-exit memory flush: SIGINT (Ctrl-C / Render shutdown) and SIGTERM
+// (orchestrators) both persist the conversation before the process dies.
+function shutdown(signal) {
+  console.log(`[nexloop] ${signal} received — saving memory…`);
+  memory.flush();
+  process.exit(0);
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

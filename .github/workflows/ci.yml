@@ -15,4 +15,4 @@ jobs:
         with:
           node-version: 20
       - name: Run tests
-        run: node --test test/nexloop.test.js test/parse.test.js test/timing.test.js
+        run: node --test test/nexloop.test.js test/parse.test.js test/timing.test.js test/memory.test.js

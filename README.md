@@ -135,6 +135,35 @@ NEXLOOP_MODEL=gpt-4o-mini
 
 A configured real model **always wins** over the demo fixture; if no key is present, it falls back to the zero-config demo. It never silently pretends a real model is configured.
 
+## Memory — "it remembers you"
+
+NexLoop persists the conversation so your AI companion doesn't lose its memory when the server restarts:
+
+- **Every turn is saved.** History is written to a memory folder (debounced after every message) — even an instance killed mid-conversation recovers.
+- **Clean exit flushes.** `SIGINT` / `SIGTERM` persist synchronously before the process dies.
+- **Every conversation re-reads memory.** History is injected into the model context on each turn; if the user shares their name (e.g. "我叫小美"), the profile is learned, persisted, and injected into the system prompt from then on.
+
+```
+memory/
+└── memory.json     # { version, updatedAt, history: [...], profile: { name } }
+```
+
+Location is configurable via `NEXLOOP_MEMORY_DIR` (default `memory/`; git-ignored).
+
+## Deploy: use it on your phone, anytime
+
+The product is meant to be *used daily* — not demoed from a laptop. It's a PWA, so it lives on your phone's home screen like a native app.
+
+**1. Deploy (free)** — [Render](https://render.com), GitHub login → *New +* → *Web Service* → pick `hhhh7666/nexloop`:
+- Build command: *(leave empty)*
+- Start command: `node server.js`
+- Environment variables: `HOST=0.0.0.0`, plus `NEXLOOP_API_KEY`, `NEXLOOP_BASE_URL`, `NEXLOOP_MODEL`
+- Instance type: Free. Render sends `SIGTERM` on shutdown, so memory is flushed automatically.
+
+**2. Keep it awake (free)** — [UptimeRobot](https://uptimerobot.com): add an HTTP monitor pinging your Render URL every 5 minutes. The free Render instance never sleeps.
+
+**3. Phone home screen** — open the URL in Safari/Chrome → **Add to Home Screen** → NexLoop appears as a full-screen app with its own icon. Open it any time, from anywhere. Memory makes every return a continuation, not a restart.
+
 ## HTTP API
 
 | Endpoint | Description |
@@ -148,12 +177,12 @@ A configured real model **always wins** over the demo fixture; if no key is pres
 
 ### Observability (every event carries `ts` + `plan_id`)
 
-`PLAN_CREATED` · `UNIT_SCHEDULED` (each draw: `delay_ms`, `hold`, `hold_ms`) · `MESSAGE_SENT` · `UNIT_HELD` · `PLAN_COMPLETED` · `USER_INTERRUPT` · `PLAN_CANCELLED` · `REPLAN_STARTED` · `USER_MESSAGE` · `MODEL_ERROR`
+`PLAN_CREATED` · `UNIT_SCHEDULED` (each draw: `delay_ms`, `hold`, `hold_ms`) · `MESSAGE_SENT` · `UNIT_HELD` · `PLAN_COMPLETED` · `USER_INTERRUPT` · `PLAN_CANCELLED` · `REPLAN_STARTED` · `USER_MESSAGE` · `MODEL_ERROR` · `MEMORY_LOADED` · `PROFILE_LEARNED`
 
 ## Tests
 
 ```bash
-npm test        # node --test test/nexloop.test.js test/parse.test.js test/timing.test.js
+npm test        # node --test test/nexloop.test.js test/parse.test.js test/timing.test.js test/memory.test.js
 ```
 
 All tests are real HTTP + SSE integration tests driven through the actual provider path against a deterministic in-process fixture.
@@ -171,6 +200,9 @@ All tests are real HTTP + SSE integration tests driven through the actual provid
 | TEST I | Interrupt clears the held closing line (no leak) |
 | TEST J | Instant switch — everything delivered immediately, no hold |
 | TEST K | Runtime pacing switch via `/api/timing` |
+| TEST L | Memory layer — save/load round-trip, corrupt-file tolerance |
+| TEST M | Memory survives a server restart (SIGTERM flush + boot restore) |
+| TEST N | Profile learning — the AI remembers the user's name and persists it |
 
 Every test ends by asserting the **no-leak invariant**: once a plan is interrupted/cancelled, no `MESSAGE_SENT` from it may ever appear. CI runs the full suite on every push.
 
@@ -178,14 +210,14 @@ Every test ends by asserting the **no-leak invariant**: once a plan is interrupt
 
 Every user already has a preferred AI (ChatGPT, Claude, Gemini…). NexLoop **plugs into the models people already use** — no migration, no switching cost, no rip-and-replace. We don't compete with models; we complete them. The addressable market is every AI conversation, everywhere.
 
-But the deepest problem isn't speed — it's that the AI never feels present. People who talk to AI often feel hollow because only *they* are proactive. NexLoop gives the AI a human rhythm: it doesn't always answer instantly, it spaces its messages unpredictably, and it reaches out when the conversation goes quiet. That emotional difference is the product.
+But the deepest problem isn't speed — it's that the AI never feels present. People who talk to AI often feel hollow because only *they* are proactive. NexLoop gives the AI a human rhythm: it doesn't always answer instantly, it spaces its messages unpredictably, and it reaches out when the conversation goes quiet — and it **remembers you** across sessions. That emotional difference is the product.
 
-**V0 status:** the interaction layer is implemented and verified — split → schedule → interrupt → replan with human pacing, strict history/plan separation, and provably cancellation-safe delivery. 16 integration tests pass on CI.
+**V0 status:** the interaction layer is implemented and verified — split → schedule → interrupt → replan with human pacing, strict history/plan separation, provably cancellation-safe delivery, and a persisted memory layer. 21 integration tests pass on CI.
 
 ### Roadmap (next)
 - **Affinity-driven pacing**: the drawn intervals shift with a "closeness" score (higher affinity → shorter waits), a hook for companion / otome-style experiences
-- Persist pending plans so a page refresh resumes them
 - Cross-session check-ins: the AI initiates when you've been away a long time
+- Richer profile memory (preferences, topics, mood) extracted from conversation
 
 ## License
 

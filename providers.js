@@ -129,8 +129,17 @@ function createOpenAIProvider({
 
   return {
     name: 'openai',
-    async generatePlan(history) {
-      const messages = [{ role: 'system', content: SYSTEM_PROMPT }, ...history];
+    async generatePlan(history, ctx = {}) {
+      // Memory layer: every conversation turn re-reads memory and injects what
+      // we remember about the user into the model context.
+      let system = SYSTEM_PROMPT;
+      const name = ctx.profile && ctx.profile.name;
+      if (name) {
+        system +=
+          `\nMemory: the user told you their name is "${name}". Use it naturally, ` +
+          `like a real companion would, but do not overuse it.`;
+      }
+      const messages = [{ role: 'system', content: system }, ...history];
       const raw1 = await call(messages);
       try {
         return parsePlanUnits(raw1);

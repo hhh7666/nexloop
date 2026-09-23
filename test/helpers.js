@@ -5,14 +5,25 @@
 const { spawn } = require('node:child_process');
 const http = require('node:http');
 const path = require('node:path');
+const os = require('node:os');
+const fs = require('node:fs');
 
 const ROOT = path.join(__dirname, '..');
 
 function startServer(extraEnv = {}) {
   return new Promise((resolve, reject) => {
+    // Memory goes to a throwaway temp dir so tests never touch repo memory/.
+    const memDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nexloop-mem-'));
     const child = spawn(process.execPath, ['server.js'], {
       cwd: ROOT,
-      env: { ...process.env, NEXLOOP_MODE: 'demo', NEXLOOP_TIMING_PRESET: 'scripted', PORT: '0', ...extraEnv },
+      env: {
+        ...process.env,
+        NEXLOOP_MODE: 'demo',
+        NEXLOOP_TIMING_PRESET: 'scripted',
+        NEXLOOP_MEMORY_DIR: memDir,
+        PORT: '0',
+        ...extraEnv,
+      },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let buf = '';

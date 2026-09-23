@@ -6,7 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/nexloop.test.js test/parse.test.js test/timing.test.js"
+    "test": "node --test test/nexloop.test.js test/parse.test.js test/timing.test.js test/memory.test.js"
   },
   "engines": {
     "node": ">=18.13"

@@ -15,6 +15,7 @@
 
 const { EventEmitter } = require('node:events');
 const { TimingStrategy } = require('./timing');
+const { extractProfile } = require('./memory');
 
 const MAX_UNITS = 20;
 const MAX_DELAY_MS = 30000;
@@ -32,14 +33,17 @@ class NexLoopEngine extends EventEmitter {
    * @param {object} opts
    * @param {{generatePlan(history: Array): Promise<Array<{text: string, delay_ms: number}>>}} opts.provider
    * @param {TimingStrategy} [opts.timing] pacing strategy (default: companion)
+   * @param {import('./memory').MemoryStore} [opts.memory] optional memory layer —
+   *        restores history on boot, auto-saves on every mutation
    */
-  constructor({ provider, timing } = {}) {
+  constructor({ provider, timing, memory } = {}) {
     super();
     if (!provider || typeof provider.generatePlan !== 'function') {
       throw new Error('engine requires a provider with generatePlan()');
     }
     this.provider = provider;
     this.timing = timing || new TimingStrategy('companion');
+    this.memory = memory || null;
 
     /** @type {Array<{role: 'user'|'assistant', content: string}>} */
     this.committedHistory = [];
@@ -52,6 +56,36 @@ class NexLoopEngine extends EventEmitter {
     this.generation = 0;
 
     this.planSeq = 0;
+
+    // Restore memory: every conversation turn re-reads the folder, and every
+    // history mutation schedules a debounced save.
+    if (this.memory) {
+      const mem = this.memory.load();
+      this.committedHistory = mem.history.map((m) => ({ role: m.role, content: m.content }));
+      this.emitEvent('MEMORY_LOADED', { messages: this.committedHistory.length, profile: mem.profile });
+    }
+  }
+
+  /** Current memory snapshot (history + profile) for model context / API. */
+  memorySnapshot() {
+    if (!this.memory) return { history: [], profile: {} };
+    return {
+      history: this.committedHistory.map((m) => ({ ...m })),
+      profile: this.memory.data.profile,
+    };
+  }
+
+  /** Schedule a memory save after any history mutation. */
+  _touchMemory() {
+    if (!this.memory) return;
+    // Profile: if the user shared their name, remember it (idempotent).
+    const profile = extractProfile(this.committedHistory);
+    if (profile.name && profile.name !== this.memory.data.profile.name) {
+      this.memory.data.profile.name = profile.name;
+      this.emitEvent('PROFILE_LEARNED', { name: profile.name });
+    }
+    this.memory.data.history = this.committedHistory.map((m) => ({ ...m, ts: nowIso() }));
+    this.memory.touch();
   }
 
   /** Read-only snapshot for /api/history. */
@@ -115,6 +149,7 @@ class NexLoopEngine extends EventEmitter {
     // 2. The user message really happened — commit it now.
     this.committedHistory.push({ role: 'user', content: message });
     this.emitEvent('USER_MESSAGE', { generation, message });
+    this._touchMemory();
 
     // 3. Generate the next plan from the CURRENT committed history.
     this.emitEvent('REPLAN_STARTED', { generation });
@@ -122,7 +157,9 @@ class NexLoopEngine extends EventEmitter {
 
     let units;
     try {
-      units = await this.provider.generatePlan(this.committedHistory);
+      units = await this.provider.generatePlan(this.committedHistory, {
+        profile: this.memory ? this.memory.data.profile : {},
+      });
       if (!Array.isArray(units) || units.length === 0) {
         throw new Error('provider returned no units');
       }
@@ -223,6 +260,7 @@ class NexLoopEngine extends EventEmitter {
       index,
       text: unit.text,
     });
+    this._touchMemory();
   }
 
   /** The held closing line fires (only while the plan is still active). */
