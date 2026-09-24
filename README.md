@@ -15,6 +15,15 @@
 
 ---
 
+## 🌱 Try it today, zero setup: the ChatGPT plugin
+
+Don't want to run a server or bring your own API key? Install the
+**[ChatGPT userscript →](chatgpt-userscript/)** — a single file that injects
+NexLoop's human pacing straight into chatgpt.com on your phone. No backend,
+no API key, installable from Files.app via the free Userscripts Safari extension.
+
+---
+
 ## The problem
 
 AI waits until you speak — then tries to say everything at once. Every conversation today is a monologue disguised as dialogue.
