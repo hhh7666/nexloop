@@ -170,6 +170,7 @@ class NexLoopEngine extends EventEmitter {
         {
           text: `[model error] 暂时无法生成回复（${errMsg.slice(0, 200)}）。请稍后再试。`,
           delay_ms: 0,
+          immediate: true, // system error → bypass human pacing, send now
         },
       ];
     }
@@ -212,7 +213,10 @@ class NexLoopEngine extends EventEmitter {
     const n = plan.units.length;
     for (let i = 0; i < n; i++) {
       const unit = plan.units[i];
-      const sched = this.timing.schedule(i, n, unit.delay_ms);
+      // System/error units bypass human pacing and go out immediately.
+      const sched = unit.immediate
+        ? { delay_ms: 0, hold: false }
+        : this.timing.schedule(i, n, unit.delay_ms);
       this.emitEvent('UNIT_SCHEDULED', {
         plan_id: plan.id,
         generation: plan.generation,

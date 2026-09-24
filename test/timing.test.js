@@ -175,3 +175,23 @@ test('TEST K — runtime pacing switch via /api/timing', async (t) => {
   const h = await getJson(srv.url, '/api/history');
   assert.equal(h.timing, 'companion');
 });
+
+/* ---------------------------------------------------------------- TEST P */
+
+test('TEST P — model-error fallback bypasses human pacing (sent immediately)', async (t) => {
+  // Paced server (demo preset, compressed ranges): a normal first reply would
+  // wait 150-250ms+ — the fallback error unit must NOT wait at all.
+  const srv = await startServer(PACED);
+  t.after(() => srv.close());
+  const sse = await sseClient(srv.url);
+
+  const t0 = Date.now();
+  await post(srv.url, '/api/chat', { message: '@@MOCK@@ definitely not json {{{' });
+  const errEv = await sse.waitFor((e) => e.event === 'MODEL_ERROR');
+  assert.ok(errEv.data.plan_id);
+  const sent = await sse.waitFor((e) => e.event === 'MESSAGE_SENT' && e.data.plan_id === errEv.data.plan_id);
+  assert.ok(sent.data.text.startsWith('[model error]'), 'fallback unit sent');
+  assert.ok(Date.now() - t0 < 1500, `fallback sent immediately despite pacing (${Date.now() - t0}ms)`);
+
+  assertNoLeak(sse.events);
+});

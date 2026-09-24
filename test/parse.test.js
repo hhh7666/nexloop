@@ -2,7 +2,7 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parsePlanUnits, createDemoProvider } = require('../providers');
+const { parsePlanUnits, createDemoProvider, createOpenAIProvider } = require('../providers');
 
 test('parses a valid plan and normalizes fields', () => {
   const units = parsePlanUnits(
@@ -48,4 +48,33 @@ test('demo provider default output is a valid variable-length plan (3-6 units)',
   assert.ok(units.length >= 3 && units.length <= 6, `3-6 units, got ${units.length}`);
   assert.ok(units.every((u) => typeof u.text === 'string' && u.text.trim() !== ''), 'every unit has text');
   assert.ok(units.every((u) => Number.isFinite(u.delay_ms) && u.delay_ms >= 0), 'every unit has a valid delay_ms');
+});
+
+test('openai provider self-heals an empty json-mode reply (downgrades to plain text)', async () => {
+  // Some third-party OpenAI-compatible proxies (e.g. api.newcoin.top) return
+  // EMPTY content when response_format json_object is set. The provider must
+  // retry without json mode and still extract the plan.
+  const calls = [];
+  const fakeFetch = async (_url, opts) => {
+    const body = JSON.parse(opts.body);
+    calls.push(body);
+    const usingJson = Boolean(body.response_format);
+    const content = usingJson
+      ? '' // proxy chokes on json_object → empty
+      : '{"messages":[{"text":"recovered","delay_ms":0}]}';
+    return { ok: true, json: async () => ({ choices: [{ message: { content } }] }) };
+  };
+  const p = createOpenAIProvider({
+    apiKey: 'k',
+    baseUrl: 'https://proxy.test/v1',
+    model: 'm',
+    jsonMode: true,
+    fetchImpl: fakeFetch,
+  });
+  const units = await p.generatePlan([{ role: 'user', content: 'hi' }]);
+  assert.equal(units.length, 1);
+  assert.equal(units[0].text, 'recovered');
+  assert.equal(calls.length, 2, 'exactly one downgrade retry');
+  assert.ok(calls[0].response_format, 'first call used json mode');
+  assert.equal(calls[1].response_format, undefined, 'retry dropped json mode');
 });

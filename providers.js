@@ -101,9 +101,9 @@ function createOpenAIProvider({
 
   const endpoint = `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`;
 
-  async function call(messages) {
+  async function call(messages, { json } = {}) {
     const body = { model, messages, temperature: 0.7 };
-    if (jsonMode) body.response_format = { type: 'json_object' };
+    if (json) body.response_format = { type: 'json_object' };
     let res;
     try {
       res = await fetchImpl(endpoint, {
@@ -140,7 +140,19 @@ function createOpenAIProvider({
           `like a real companion would, but do not overuse it.`;
       }
       const messages = [{ role: 'system', content: system }, ...history];
-      const raw1 = await call(messages);
+
+      // json_mode first (best structured output). Some third-party OpenAI-
+      // compatible proxies (e.g. api.newcoin.top) choke on response_format
+      // json_object and reply with EMPTY content — so on an empty reply we
+      // automatically retry WITHOUT json mode; extractJson still pulls the
+      // JSON plan out of plain text. Self-healing, no config needed.
+      let raw1;
+      try {
+        raw1 = await call(messages, { json: jsonMode });
+      } catch (errEmpty) {
+        if (!jsonMode || !/empty content/.test(String(errEmpty.message))) throw errEmpty;
+        raw1 = await call(messages, { json: false });
+      }
       try {
         return parsePlanUnits(raw1);
       } catch (err1) {
