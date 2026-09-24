@@ -1,0 +1,24 @@
+# Render Blueprint — deploy NexLoop as a free Web Service.
+# 1) Fork/clone the repo (public) 
+# 2) In Render: New + → Blueprint → pick the repo → it reads this file.
+# 3) Fill the sync:false env vars in the Render dashboard (they are never committed).
+services:
+  - type: web
+    name: nexloop
+    runtime: node
+    plan: free
+    buildCommand: ""
+    startCommand: node server.js
+    healthCheckPath: /
+    envVars:
+      - key: HOST
+        value: "0.0.0.0" # REQUIRED: Render's proxy must reach the server
+      - key: NEXLOOP_TIMING_PRESET
+        value: companion
+      # Secrets (fill in Render dashboard, never commit):
+      - key: NEXLOOP_API_KEY
+        sync: false
+      - key: NEXLOOP_BASE_URL
+        sync: false
+      - key: NEXLOOP_MODEL
+        sync: false
