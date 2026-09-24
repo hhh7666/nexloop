@@ -36,9 +36,10 @@
       middle: [3000, 7000],
       hold:   [6000, 10000],
     },
-    instant: { first: [0, 0], middle: [0, 0], hold: [0, 0] }, // the OFF switch
+    instant: { first: [0, 0], middle: [0, 0], hold: [0, 0] }, // instant = all at once
   };
 
+  // 'off' = NexLoop fully hands-off: native ChatGPT, nothing intercepted.
   let preset = localStorage.getItem('nexloop_preset') || 'demo';
 
   // ---------- cancellation-safe state machine (ported from V0 engine.js) ----------
@@ -170,6 +171,7 @@
   }
 
   function processIfComplete() {
+    if (preset === 'off') return; // fully hands-off: native ChatGPT untouched
     if (isStreamRunning()) return;
     const nodes = findAssistantContainers();
     if (!nodes.length) return;
@@ -224,7 +226,7 @@
   ].join(';');
   bar.innerHTML =
     '<span style="color:#f97316;font-weight:700">NexLoop</span>' +
-    ['companion', 'demo', 'instant'].map((p) =>
+    ['companion', 'demo', 'instant', 'off'].map((p) =>
       '<button data-p="' + p + '" style="padding:3px 8px;border-radius:6px;border:1px solid #333;background:#1a1a22;color:#ddd">' + p + '</button>'
     ).join('');
   document.body.appendChild(bar);
@@ -241,6 +243,7 @@
     if (!p) return;
     preset = p;
     localStorage.setItem('nexloop_preset', p);
+    if (p === 'off') { generation++; clearPlan(); log('PLAN_CANCELLED (handed back to native ChatGPT)'); }
     highlight();
     log('TIMING_SWITCH ' + p);
   });

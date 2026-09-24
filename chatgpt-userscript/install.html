@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NexLoop for ChatGPT — 一键安装</title>
+<style>
+  body { margin:0; font-family:-apple-system,system-ui,sans-serif; background:#0b0b0f; color:#eee; }
+  .wrap { max-width:520px; margin:0 auto; padding:28px 18px 48px; }
+  h1 { font-size:22px; color:#f97316; margin:0 0 6px; }
+  .sub { font-size:14px; color:#aaa; margin-bottom:22px; line-height:1.6; }
+  .btn {
+    display:block; text-align:center; text-decoration:none;
+    background:#f97316; color:#111; font-weight:700; font-size:17px;
+    padding:15px 0; border-radius:12px; margin:14px 0 22px;
+  }
+  .btn:active { transform:scale(.98); }
+  .step {
+    display:flex; gap:12px; margin:14px 0; padding:12px;
+    background:#16161d; border-radius:10px; font-size:14px; line-height:1.6;
+  }
+  .step .n {
+    flex:0 0 26px; height:26px; border-radius:50%; background:#f97316; color:#111;
+    font-weight:800; text-align:center; line-height:26px; font-size:13px;
+  }
+  code { background:#23232c; padding:2px 6px; border-radius:5px; font-size:13px; }
+  .note { font-size:12px; color:#888; margin-top:18px; line-height:1.7; }
+  .note b { color:#bbb; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>NexLoop for ChatGPT</h1>
+  <div class="sub">给 ChatGPT 装上"人类节奏"：回复分段发送、随机停顿、最后一句等你安静了才补发。随时可以一键切回原生模式。</div>
+
+  <a class="btn" href="https://raw.githubusercontent.com/hhh7666/nexloop/main/chatgpt-userscript/nexloop.user.js">① 安装脚本（点这里）</a>
+
+  <div class="step"><div class="n">1</div><div>先在 App Store 安装免费的 <b>Userscripts</b> 应用（搜索 "Userscripts"），并打开它一次。</div></div>
+  <div class="step"><div class="n">2</div><div>iOS <b>设置 → App → Safari → 扩展 → Userscripts</b>，打开开关授权。</div></div>
+  <div class="step"><div class="n">3</div><div>回到本页点上面的<b>① 安装脚本</b>按钮，Safari 会弹出安装确认，点安装即可。</div></div>
+  <div class="step"><div class="n">4</div><div>打开 <b>chatgpt.com</b>，右下角出现橙色 <b>NexLoop</b> 徽章 = 生效。</div></div>
+
+  <div class="note">
+    <b>为什么是"点一下 + 装一次"：</b>iOS 出于安全不允许网页直接注入脚本，所以一次性安装 Userscripts
+    （App Store 免费）+ 授权一次 Safari 扩展。之后每次打开 ChatGPT 自动生效，不用再管。<br><br>
+    <b>想回到原生 ChatGPT？</b>点徽章上的 <b>off</b> 按钮即可——脚本完全放行，什么都不拦截，不用卸载。
+  </div>
+</div>
+</body>
+</html>

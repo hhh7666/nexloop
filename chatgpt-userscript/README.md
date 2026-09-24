@@ -30,18 +30,27 @@ The LAST piece HOLDS — it only appears after you've been silent 60–120s
 If you interrupt at any point: everything still pending is cancelled forever
 ```
 
-Three pacing presets (toggle with the floating **NexLoop** badge, bottom-right):
+Three pacing presets + an OFF switch (toggle with the floating **NexLoop**
+badge, bottom-right):
 
 | Preset | First piece | Middle gaps | Held closing line |
 |---|---|---|---|
 | **companion** | 60–120 s | 20–60 s | holds 60–120 s of silence |
 | **demo** *(default)* | 2–5 s | 3–7 s | holds 6–10 s |
-| **instant** | 0 | 0 | off (classic ChatGPT) |
+| **instant** | 0 | 0 | all at once |
+| **off** | — | — | **fully hands-off: native ChatGPT, nothing intercepted** |
+
+Tap `off` any time to hand the page back to plain ChatGPT — no need to remove
+or disable the script.
 
 ---
 
-## Install on iPhone (3 steps, one-time)
+## Install on iPhone
 
+**One-tap install:** open [`install.html`](install.html) on your iPhone and tap
+the orange button — Userscripts takes over the rest.
+
+**Manual (equivalent):**
 1. **Install the free [Userscripts](https://apps.apple.com/app/userscripts/id1463298675) app** from the App Store.
 2. Open **Userscripts** → tap the **+** → **Browse** → pick the downloaded
    `nexloop.user.js` (drop it into Files first). Enable the toggle for the script.
